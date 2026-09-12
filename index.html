@@ -115,7 +115,11 @@
 
   /* ---------- route card (pickup/drop) ---------- */
   .route-card{background:var(--sheet-2);border-radius:16px;padding:2px 16px;}
-  .route-row{display:flex;align-items:center;gap:14px;padding:14px 0;}
+  .route-row{display:flex;align-items:center;gap:14px;padding:14px 0;position:relative;}
+  .suggest{position:absolute;left:25px;right:0;top:100%;background:var(--sheet);border-radius:12px;box-shadow:0 14px 30px -8px rgba(0,0,0,.3);margin-top:2px;overflow:hidden;z-index:30;display:none;}
+  .suggest.show{display:block;}
+  .suggest button{display:block;width:100%;text-align:left;padding:10px 14px;background:none;border:none;font-size:13.5px;color:var(--ink);cursor:pointer;}
+  .suggest button:hover, .suggest button:active{background:var(--sheet-2);}
   .route-glyph{flex:none;width:11px;display:flex;justify-content:center;}
   .route-dot{width:10px;height:10px;border-radius:50%;background:var(--accent);}
   .route-square{width:9px;height:9px;border-radius:2.5px;background:var(--ink);}
@@ -236,6 +240,8 @@
 
   .counter{margin-top:16px;font-size:12px;color:var(--ink-faint);}
   .counter b{color:var(--ink-soft);}
+  .success-wrap .section-label, .success-wrap .group, .success-wrap .hint{text-align:left;}
+  #markDoneBtn.done{color:var(--success);}
 
   footer{margin-top:30px;padding:0 26px;text-align:center;font-size:11px;color:var(--stage-soft);line-height:1.5;}
 </style>
@@ -306,12 +312,14 @@
         <div class="route-card reveal" id="routeCard">
           <div class="route-row">
             <span class="route-glyph"><span class="route-dot"></span></span>
-            <input id="fPickup" type="text" placeholder="Pickup — Sector 62, Noida">
+            <input id="fPickup" type="text" placeholder="Pickup — Sector 62, Noida" autocomplete="off">
+            <div class="suggest" id="pickupSuggest"></div>
           </div>
           <div class="route-connector"></div>
           <div class="route-row">
             <span class="route-glyph"><span class="route-square"></span></span>
-            <input id="fDrop" type="text" placeholder="Drop — Cyber Hub, Gurgaon">
+            <input id="fDrop" type="text" placeholder="Drop — Cyber Hub, Gurgaon" autocomplete="off">
+            <div class="suggest" id="dropSuggest"></div>
           </div>
         </div>
 
@@ -425,9 +433,15 @@
             </div>
           </div>
 
+          <div id="matchesWrap" class="reveal-late"></div>
+
+          <div class="reveal-late" style="margin-top:16px;">
+            <button class="btn btn-ghost" id="markDoneBtn" type="button">Mark as done — seats filled</button>
+          </div>
+
           <p class="counter reveal-late" id="counterLine"></p>
 
-          <div style="margin-top:22px;" class="reveal-late">
+          <div style="margin-top:10px;" class="reveal-late">
             <button class="btn btn-ghost" id="startOver" type="button">Log another trip</button>
           </div>
         </div>
@@ -490,6 +504,68 @@
 
   function $(sel){ return document.querySelector(sel); }
   function $all(sel){ return Array.prototype.slice.call(document.querySelectorAll(sel)); }
+  function escapeHtml(s){
+    return String(s==null?'':s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // ---- static Delhi-NCR place list ----
+  // No live geocoding API is reachable from inside this artifact's sandbox (network
+  // calls are blocked outright, free or paid, Google or otherwise) — so instead of a
+  // short hand-picked list, this covers the vocabulary people actually use for a
+  // commute: every sector number in Noida/Gurgaon/Faridabad, plus the metro network,
+  // plus known hubs. Free typing always works for anything not in the list.
+  function range(n){ var a=[]; for(var i=1;i<=n;i++) a.push(i); return a; }
+  var SECTORS =
+    range(168).map(function(n){ return 'Sector '+n+', Noida'; }).concat(
+    range(115).map(function(n){ return 'Sector '+n+', Gurgaon'; }),
+    range(89).map(function(n){ return 'Sector '+n+', Faridabad'; })
+  );
+  var METRO = ['Samaypur Badli','Rohini Sector 18','Rohini West','Rohini East','Netaji Subhash Place','Pitampura',
+    'Kohat Enclave','Shastri Nagar','Inderlok','Kanhaiya Nagar','Shakurpur','Punjabi Bagh West','Ashok Park Main',
+    'Azadpur','Model Town','GTB Nagar','Vishwavidyalaya','Vidhan Sabha','Civil Lines','Kashmere Gate','Chandni Chowk',
+    'Chawri Bazar','New Delhi','Rajiv Chowk','Patel Chowk','Central Secretariat','Udyog Bhawan','Lok Kalyan Marg',
+    'Jor Bagh','INA','AIIMS','Green Park','Hauz Khas','Malviya Nagar','Saket','Qutab Minar','Chhatarpur','Sultanpur',
+    'Ghitorni','Arjan Garh','Guru Dronacharya','Sikanderpur','MG Road, Gurgaon','IFFCO Chowk','HUDA City Centre',
+    'Dwarka Sector 21','Dwarka Sector 14','Dwarka Sector 12','Dwarka Sector 10','Dwarka Sector 9','Dwarka Sector 8',
+    'Dwarka Mor','Nawada','Uttam Nagar West','Uttam Nagar East','Janakpuri West','Janakpuri East','Tilak Nagar',
+    'Subhash Nagar','Tagore Garden','Rajouri Garden','Ramesh Nagar','Moti Nagar','Kirti Nagar','Shadipur','Patel Nagar',
+    'Rajendra Place','Karol Bagh','Jhandewalan','RK Ashram Marg','Barakhamba Road','Mandi House','Supreme Court',
+    'Indraprastha','Yamuna Bank','Akshardham','Mayur Vihar Phase 1','Preet Vihar','Karkarduma','Anand Vihar','Vaishali',
+    'Noida City Centre','Noida Sector 15','Noida Sector 16','Noida Sector 18','Botanical Garden','Vasundhara',
+    'ITO','Delhi Gate','Jama Masjid','Jangpura','Lajpat Nagar','Moolchand','Kailash Colony','Nehru Place',
+    'Kalkaji Mandir','Govind Puri','Okhla','Badarpur','Sarita Vihar','Faridabad','Majlis Park','Shalimar Bagh',
+    'ESI Hospital','Vinobapuri','Ashram','Hazrat Nizamuddin','IIT Delhi','South Extension','Chirag Delhi',
+    'Greater Kailash','Nehru Enclave','Okhla NSIC','Jasola','Kalindi Kunj','Janakpuri West','Palam',
+    'Terminal 1D IGI Airport','Vasant Vihar','Munirka','R K Puram','Shivaji Stadium','Dhaula Kuan','Delhi Aerocity',
+    'IGI Airport T3','Sector 51, Noida','Sector 50, Noida','Sector 76, Noida','Sector 101, Noida','Sector 81, Noida',
+    'Knowledge Park II, Greater Noida','Pari Chowk, Greater Noida','Alpha 1, Greater Noida','Delta 1, Greater Noida'];
+  var LANDMARKS = ['Connaught Place, Delhi','Cyber Hub, Gurgaon','DLF Phase 1, Gurgaon','DLF Phase 2, Gurgaon',
+    'DLF Phase 3, Gurgaon','DLF Phase 4, Gurgaon','DLF Phase 5, Gurgaon','Sohna Road, Gurgaon','Udyog Vihar, Gurgaon',
+    'Golf Course Road, Gurgaon','India Gate, Delhi','Select Citywalk, Saket','Indirapuram, Ghaziabad',
+    'Vaishali, Ghaziabad','Raj Nagar Extension, Ghaziabad','NIT Faridabad','Rohini, Delhi','Laxmi Nagar, Delhi',
+    'Mayur Vihar, Delhi','Vasant Kunj, Delhi','Noida Extension','Film City, Noida'];
+  var PLACES = [].concat(SECTORS, METRO, LANDMARKS);
+  function setupAutocomplete(inputId, suggestId){
+    var input = $('#'+inputId), box = $('#'+suggestId);
+    input.addEventListener('input', function(){
+      var v = input.value.trim().toLowerCase();
+      if(v.length < 2){ box.classList.remove('show'); box.innerHTML=''; return; }
+      var matches = PLACES.filter(function(p){ return p.toLowerCase().indexOf(v) !== -1; }).slice(0,5);
+      if(!matches.length){ box.classList.remove('show'); box.innerHTML=''; return; }
+      box.innerHTML = matches.map(function(p){ return '<button type="button">'+escapeHtml(p)+'</button>'; }).join('');
+      box.classList.add('show');
+      $all('#'+suggestId+' button').forEach(function(btn,i){
+        btn.addEventListener('click', function(){
+          input.value = matches[i];
+          box.classList.remove('show'); box.innerHTML='';
+          checkRouteActive(); checkTripValid();
+        });
+      });
+    });
+    input.addEventListener('blur', function(){ setTimeout(function(){ box.classList.remove('show'); }, 150); });
+  }
 
   function updateStage(name){
     var eb = $('#stageEyebrow'), hl = $('#stageHeadline');
@@ -751,6 +827,71 @@
     return code + ' ' + d.slice(0,2) + '••••' + d.slice(-2);
   }
 
+  // ---- smart matching: score other open requests in the shared board ----
+  var COMPLEMENT = { driver:['passenger','carpool'], passenger:['driver','carpool'], carpool:['driver','passenger','carpool'] };
+  function minutesFromTime(t){ var p=(t||'0:0').split(':'); return parseInt(p[0],10)*60+parseInt(p[1],10); }
+  function wordOverlap(a,b){
+    function words(s){ return (s||'').toLowerCase().split(/[^a-z0-9]+/).filter(function(w){ return w.length>2; }); }
+    var setB = {}; words(b).forEach(function(w){ setB[w]=true; });
+    var n = 0; words(a).forEach(function(w){ if(setB[w]) n++; });
+    return n;
+  }
+  function findMatches(payload, selfId){
+    if(!db) return Promise.resolve([]);
+    var wanted = COMPLEMENT[payload.role] || [];
+    return db.collection('requests').where('date','==',payload.date).where('status','==','open').limit(200).get().then(function(snap){
+      var out = [];
+      snap.docs.forEach(function(doc){
+        if(doc.id === selfId) return;
+        var d = doc.data();
+        if(!d || wanted.indexOf(d.role) === -1) return;
+        var tdiff = Math.abs(minutesFromTime(d.time) - minutesFromTime(payload.time));
+        if(tdiff > 120) return;
+        var score = wordOverlap(d.pickup, payload.pickup)*3 + wordOverlap(d.drop, payload.drop)*3 + Math.max(0, 40-tdiff);
+        if(/no preference|willing/i.test(d.vehicle||'') || /no preference|willing/i.test(payload.vehicle||'') || d.vehicle===payload.vehicle) score += 8;
+        out.push({ data:d, score:score, tdiff:tdiff });
+      });
+      out.sort(function(x,y){ return y.score - x.score; });
+      return out.slice(0,3);
+    }).catch(function(){ return []; });
+  }
+  function renderMatches(list){
+    var wrap = $('#matchesWrap');
+    if(!wrap) return;
+    if(!db){
+      wrap.innerHTML = '<p class="hint">Saved on this device only, so there\'s no shared board here to match against.</p>';
+      return;
+    }
+    if(!list || !list.length){
+      wrap.innerHTML = '<p class="section-label">People going your way</p>' +
+        '<p class="hint">No matches yet. There\'s no alert system here — check back and search again to see new requests.</p>';
+      return;
+    }
+    var html = '<p class="section-label">People going your way</p><div class="group">';
+    list.forEach(function(m){
+      var d = m.data;
+      var initial = (d.name||'?').trim().charAt(0).toUpperCase() || '?';
+      var seatNote = (d.role !== 'passenger' && d.people) ? ('<span class="summary-value">'+d.people+' seat'+(d.people===1?'':'s')+'</span>') : '';
+      html += '<div class="row"><span class="activity-avatar" style="width:34px;height:34px;font-size:13px;">'+escapeHtml(initial)+'</span>' +
+        '<span class="row-text"><b>'+escapeHtml(d.name||'Professional')+'</b><span>'+escapeHtml(d.pickup)+' → '+escapeHtml(d.drop)+' · '+escapeHtml(fmtTime(d.time))+'</span></span>' +
+        seatNote + '</div>';
+    });
+    html += '</div><p class="hint">No alerts yet — check back here to see new matches.</p>';
+    wrap.innerHTML = html;
+  }
+
+  $('#markDoneBtn').addEventListener('click', function(){
+    var btn = this;
+    if(!state.docRef){ btn.textContent = 'Saved on this device only'; btn.disabled = true; return; }
+    btn.disabled = true;
+    state.docRef.update({ status:'closed' }).then(function(){
+      btn.textContent = 'Marked as done — hidden from new matches';
+      btn.classList.add('done');
+    }).catch(function(){
+      btn.disabled = false;
+    });
+  });
+
   function submitRequest(){
     var btn = $('#contactSubmit');
     btn.disabled = true;
@@ -766,7 +907,7 @@
       pickup: state.pickup, drop: state.drop, date: state.date, time: state.time,
       vehicle: state.vehicle, people: state.people,
       phone: state.code + ' ' + state.phone.replace(/\D/g,''),
-      refCode: refCode, createdAt: new Date().toISOString()
+      refCode: refCode, status:'open', createdAt: new Date().toISOString()
     };
 
     var minDelay = new Promise(function(res){ setTimeout(res, 550); });
@@ -790,12 +931,19 @@
     $('#passTime').textContent = fmtTime(state.time);
     $('#passVehicle').textContent = state.vehicle;
     $('#passPeople').textContent = state.people;
+    renderMatches(state.matches);
+    var mb = $('#markDoneBtn');
+    mb.disabled = false; mb.classList.remove('done'); mb.textContent = 'Mark as done — seats filled';
   }
 
   function persist(payload){
     if(db){
-      return db.collection('requests').add(payload).then(refreshCount).catch(function(){});
+      return db.collection('requests').add(payload).then(function(ref){
+        state.docRef = ref;
+        return findMatches(payload, ref.id).then(function(matches){ state.matches = matches; });
+      }).then(refreshCount).catch(function(){ state.matches = []; });
     }
+    state.docRef = null; state.matches = [];
     try{
       var list = JSON.parse(localStorage.getItem('merge_requests') || '[]');
       list.push(payload);
@@ -816,10 +964,14 @@
   $('#startOver').addEventListener('click', function(){
     $('#fPickup').value=''; $('#fDrop').value='';
     $('#fPhone').value=''; consentOn=false; state.consent=false;
+    state.docRef=null; state.matches=[];
     $('#fConsent').setAttribute('aria-checked','false');
     $('#contactSubmit').disabled = true;
     showStep('role');
   });
+
+  setupAutocomplete('fPickup','pickupSuggest');
+  setupAutocomplete('fDrop','dropSuggest');
 
   // ---- live activity feed (home) ----
   var ACTIVITY = [
