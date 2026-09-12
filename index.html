@@ -96,6 +96,17 @@
   .section-label{font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint);margin:20px 2px 8px;}
   .section-label:first-child{margin-top:0;}
 
+  /* ---------- live activity (home) ---------- */
+  .activity-toast{display:flex;align-items:center;gap:10px;background:var(--sheet-2);border-radius:14px;padding:11px 14px;margin-bottom:14px;transition:opacity .3s ease, transform .3s ease;}
+  .activity-toast.fade{opacity:0;transform:translateY(4px);}
+  .activity-avatar{width:26px;height:26px;border-radius:50%;background:var(--accent);color:#fff;font-size:11.5px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none;}
+  .activity-text{font-size:12.5px;font-weight:600;color:var(--ink);line-height:1.3;flex:1;min-width:0;}
+  .activity-live{width:6px;height:6px;border-radius:50%;background:var(--success);flex:none;}
+  @media (prefers-reduced-motion:no-preference){
+    .activity-live{animation:livepulse 1.6s ease-in-out infinite;}
+    @keyframes livepulse{0%,100%{opacity:1;}50%{opacity:.25;}}
+  }
+
   /* ---------- trust line (home) ---------- */
   .trust-line{display:flex;flex-wrap:wrap;justify-content:center;gap:6px 0;margin-top:22px;font-size:12px;color:var(--ink-faint);text-align:center;}
   .trust-line span.item{display:inline-flex;align-items:center;gap:5px;padding:0 9px;}
@@ -261,6 +272,11 @@
 
       <!-- ROLE -->
       <section class="step visible" data-step="role">
+        <div class="activity-toast reveal" id="activityToast">
+          <span class="activity-avatar" id="actAvatar">A</span>
+          <span class="activity-text" id="actText">Aditya just offered a ride · Sector 62 → Cyber Hub</span>
+          <span class="activity-live"></span>
+        </div>
         <div class="group reveal">
           <button class="row row-btn" data-role="driver" type="button">
             <span class="glyph"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="7.5" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="2" fill="currentColor"/><path d="M12 5v3M12 16v3M5 12h3M16 12h3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
@@ -311,16 +327,7 @@
         </div>
 
         <p class="section-label reveal">Departure time</p>
-        <div class="chip-row reveal" id="timeChips">
-          <button class="chip" data-time="07:30" type="button">7:30 AM</button>
-          <button class="chip" data-time="09:00" type="button">9:00 AM</button>
-          <button class="chip" data-time="18:00" type="button">6:00 PM</button>
-          <label class="chip chip-custom" id="timeCustomChip">
-            <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.6"/><path d="M10 6v4l3 2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-            <span id="timeCustomLabel">Other</span>
-            <input id="fTime" type="time">
-          </label>
-        </div>
+        <div class="chip-row reveal" id="timeChips"></div>
 
         <p class="section-label reveal" id="vehicleLabel">Vehicle</p>
         <div class="chip-row reveal" id="vehicleChips"></div>
@@ -479,7 +486,7 @@
 
   var CAR_ICON = '<svg viewBox="0 0 20 20" fill="none"><rect x="2.5" y="9" width="15" height="5.5" rx="1.6" stroke="currentColor" stroke-width="1.6"/><path d="M4 9l1.8-4h8.4L16 9" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="6" cy="14.5" r="1.4" fill="currentColor"/><circle cx="14" cy="14.5" r="1.4" fill="currentColor"/></svg>';
   var BIKE_ICON = '<svg viewBox="0 0 20 20" fill="none"><circle cx="5" cy="14" r="2.6" stroke="currentColor" stroke-width="1.6"/><circle cx="15" cy="14" r="2.6" stroke="currentColor" stroke-width="1.6"/><path d="M5 14l3.5-7h3L15 14M8.5 7H7M11 9l-2 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  var FLEX_ICON = '<svg viewBox="0 0 20 20" fill="none"><path d="M10 3v14M4.5 6.5L10 3l5.5 3.5M4.5 13.5L10 17l5.5-3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var LINK_ICON = '<svg viewBox="0 0 20 20" fill="none"><path d="M8.3 11.7l3.4-3.4M7 13l-1.6 1.6a2.7 2.7 0 01-3.8-3.8L3.2 9.2M13 7l1.6-1.6a2.7 2.7 0 013.8 3.8L16.8 10.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
   function $(sel){ return document.querySelector(sel); }
   function $all(sel){ return Array.prototype.slice.call(document.querySelectorAll(sel)); }
@@ -567,30 +574,62 @@
     checkTripValid();
   });
 
-  // ---- trip: time chips ----
+  // ---- trip: time chips (relative to right now) ----
+  function pad2(n){ return (n<10?'0':'')+n; }
+  function nextSlots(){
+    var now = new Date();
+    var slots = [];
+    [30,60,90,120].forEach(function(mins){
+      var d = new Date(now.getTime() + mins*60000);
+      var m = d.getMinutes(); var rem = m % 5;
+      if(rem !== 0) d.setMinutes(m + (5-rem));
+      slots.push(pad2(d.getHours()) + ':' + pad2(d.getMinutes()));
+    });
+    return slots;
+  }
   function setTimeChipUI(which){
     $all('#timeChips .chip').forEach(function(c){ c.classList.remove('selected'); });
-    if(which){ $('#timeChips [data-time="'+which+'"]').classList.add('selected'); }
-    else { $('#timeCustomChip').classList.add('selected'); }
+    if(which){
+      var el = $('#timeChips [data-time="'+which+'"]');
+      if(el){ el.classList.add('selected'); return; }
+    }
+    var custom = $('#timeCustomChip');
+    if(custom) custom.classList.add('selected');
   }
-  $all('#timeChips [data-time]').forEach(function(btn){
-    btn.addEventListener('click', function(){
-      var t = btn.getAttribute('data-time');
-      $('#fTime').value = t; $('#timeCustomLabel').textContent='Other';
-      setTimeChipUI(t); checkTripValid();
+  function renderTimeChips(){
+    var wrap = $('#timeChips');
+    var slots = nextSlots();
+    var html = '';
+    slots.forEach(function(s){
+      html += '<button class="chip" data-time="'+s+'" type="button">'+fmtTime(s)+'</button>';
     });
-  });
-  $('#fTime').addEventListener('change', function(){
-    var v = this.value;
-    if(v==='07:30'||v==='09:00'||v==='18:00') setTimeChipUI(v);
-    else { setTimeChipUI(null); $('#timeCustomLabel').textContent = v ? fmtTime(v) : 'Other'; }
-    checkTripValid();
-  });
+    html += '<label class="chip chip-custom" id="timeCustomChip">' +
+      '<svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.6"/><path d="M10 6v4l3 2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>' +
+      '<span id="timeCustomLabel">Other</span>' +
+      '<input id="fTime" type="time">' +
+    '</label>';
+    wrap.innerHTML = html;
+    $all('#timeChips [data-time]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var t = btn.getAttribute('data-time');
+        $('#fTime').value = t; $('#timeCustomLabel').textContent = 'Other';
+        setTimeChipUI(t); checkTripValid();
+      });
+    });
+    $('#fTime').addEventListener('change', function(){
+      var v = this.value;
+      if(slots.indexOf(v) !== -1) setTimeChipUI(v);
+      else { setTimeChipUI(null); $('#timeCustomLabel').textContent = v ? fmtTime(v) : 'Other'; }
+      checkTripValid();
+    });
+    $('#fTime').value = slots[0];
+    setTimeChipUI(slots[0]);
+  }
 
   // ---- trip: vehicle chips ----
   function iconFor(name){
     if(/bike|scooter/i.test(name)) return BIKE_ICON;
-    if(/no preference|willing/i.test(name)) return FLEX_ICON;
+    if(/no preference|willing/i.test(name)) return LINK_ICON;
     return CAR_ICON;
   }
   function renderVehicleChips(){
@@ -635,7 +674,7 @@
     state.people = 1;
     $('#peopleValue').textContent = '1';
     $('#fDate').value = isoDate(0); $('#dateCustomLabel').textContent='Pick a date'; setDateChipUI('today');
-    $('#fTime').value = '09:00'; $('#timeCustomLabel').textContent='Other'; setTimeChipUI('09:00');
+    renderTimeChips();
     checkRouteActive();
     checkTripValid();
   }
@@ -781,6 +820,31 @@
     $('#contactSubmit').disabled = true;
     showStep('role');
   });
+
+  // ---- live activity feed (home) ----
+  var ACTIVITY = [
+    { a:'A', t:'Aditya just offered a ride · Sector 62 → Cyber Hub' },
+    { a:'P', t:"Priya's ride request was accepted" },
+    { a:'K', t:'Kabir & Meera are now carpooling to DLF Phase 3' },
+    { a:'N', t:'Neha offered 2 seats for tomorrow morning' },
+    { a:'R', t:'Rohan found a ride to Sector 18' },
+    { a:'S', t:"Two professionals just matched for today's commute" }
+  ];
+  var actIdx = 0;
+  function rotateActivity(){
+    var el = $('#activityToast');
+    if(!el) return;
+    el.classList.add('fade');
+    setTimeout(function(){
+      actIdx = (actIdx + 1) % ACTIVITY.length;
+      $('#actAvatar').textContent = ACTIVITY[actIdx].a;
+      $('#actText').textContent = ACTIVITY[actIdx].t;
+      el.classList.remove('fade');
+    }, 300);
+  }
+  if(!window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+    setInterval(rotateActivity, 3400);
+  }
 
   updateStage('role');
 
